@@ -566,7 +566,105 @@ class Virement(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 ##### GUICHET ##########
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+from rest_framework import status
+from django.db import connection
+
 class Guichet(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            # Récupérer les critères de recherche depuis les paramètres de la requête
+            date_transaction_filter = request.GET.get('date_transaction', None)
+            compte_benef_filter = request.GET.get('Compte_benef', None)
+            nomlib_filter = request.GET.get('nomlib', None)
+            oper_filter = request.GET.get('oper', None)
+            agence_filter = request.GET.get('agence', None)
+
+            # Récupérer les dates de début et de fin pour la recherche entre deux dates
+            start_date = request.GET.get('start_date', None)
+            end_date = request.GET.get('end_date', None)
+
+            # Construction de la requête SQL de base
+            query = """
+                select 
+                       a.oper,
+                       f.y1 type_operation,
+                       a.datoper date_transaction,
+                       a.COMPTED Compte_Don,
+                       a.COMPTEC Compte_benef,
+                       a.devised devise_debit,
+                       a.devisec devise_credit, 
+                       a.nomlib,
+                       a.mntnetd montant_debeit,
+                       a.mntnetc montant_credit,
+                       c.agence
+                FROM GUICHET a, fx5y8 f,cpt c
+                WHERE tname='GUICHET' and trim(a.oper) = trim(f.x1) and a.compted=c.compte and a.VALIDE = 'V'
+            """
+
+            # Ajout des filtres dynamiques selon les paramètres
+            filters = []
+
+            if date_transaction_filter:
+                filters.append(f"a.datoper = '{date_transaction_filter}'")
+            if compte_benef_filter:
+                filters.append(f"a.COMPTEC = '{compte_benef_filter}'")
+            if oper_filter:
+                filters.append(f"a.oper = '{oper_filter}'")
+            if agence_filter:
+                filters.append(f"c.agence = '{agence_filter}'")
+            if nomlib_filter:
+                filters.append(f"a.nomlib LIKE '%{nomlib_filter}%'")
+
+            # Filtrage par plage de dates (start_date et end_date)
+            if start_date and end_date:
+                filters.append(f"a.datoper BETWEEN '{start_date}' AND '{end_date}'")
+            elif start_date:
+                filters.append(f"a.datoper >= '{start_date}'")
+            elif end_date:
+                filters.append(f"a.datoper <= '{end_date}'")
+
+            # Ajouter les filtres à la requête SQL
+            if filters:
+                query += " AND " + " AND ".join(filters)
+
+            # Exécuter la requête SQL
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+            # Format des résultats dans une liste de dictionnaires
+            result = []
+            for row in rows:
+                result.append({
+                    'oper': row[0],
+                    'type_operation': row[1],
+                    'date_transaction': row[2],
+                    'Compte_Don': row[3],
+                    'Compte_benef': row[4],
+                    'devise_debit': row[5],
+                    'devise_credit': row[6],
+                    'nomlib': row[7],
+                    'montant_debit': row[8],
+                    'montant_credit': row[9],
+                    'agence': row[10]
+                })
+
+            # Pagination des résultats
+            paginator = PageNumberPagination()
+            paginator.page_size = 14  # Limiter les résultats par page
+            paginated_results = paginator.paginate_queryset(result, request)
+
+            # Retourner les résultats paginés avec la réponse JSON
+            return paginator.get_paginated_response(paginated_results)
+
+        except Exception as e:
+            # Gestion des erreurs
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+class Guichet1(APIView):
     def get(self, request, *args, **kwargs):
         try:
             # Récupérer les critères de recherche depuis les paramètres de la requête
