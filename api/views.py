@@ -896,7 +896,12 @@ class CompteDeposite(APIView):
         })
 
 
-### cleint ######
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+from django.db import connection
+from rest_framework import status
+
 class Client(APIView):
     def get(self, request, *args, **kwargs):
         try:
@@ -907,7 +912,6 @@ class Client(APIView):
             nom_filter = request.GET.get('nom', None)
             type_filter = request.GET.get('type', None)
 
-
             # Récupérer les dates de début et de fin pour la recherche entre deux dates
             start_date = request.GET.get('start_date', None)
             end_date = request.GET.get('end_date', None)
@@ -915,18 +919,18 @@ class Client(APIView):
             # Construction de la requête SQL de base
             query = """
                 SELECT 
-                   Distinct l.CLIENT,
+                   DISTINCT l.CLIENT,
                     l.NOM,
                     l.DATOUV,
                     l.DATFRM,
                     l.AGENCE,
-                    ng.libelle
-                FROM cli l,cpt p,ncglib ng
-              
-                WHERE l.CLIENT=p.CLIENT 
-                and ng.ncg = p.ncg
-                and p.ncg like %s
-   
+                    ag.ageclib
+                FROM cli l, cpt p, ncglib ng, agec ag
+                WHERE l.CLIENT = p.CLIENT 
+                AND ng.ncg = p.ncg 
+                AND l.agec = ag.agec
+                AND l.datfrm IS NULL 
+                AND p.ncg LIKE %s
             """
 
             # Ajout des filtres dynamiques selon les paramètres
@@ -936,11 +940,11 @@ class Client(APIView):
             if client_filter:
                 filters.append(f"l.CLIENT = %s")
             if agence_filter:
-                filters.append(f"l.AGENCE = %s")    
+                filters.append(f"l.AGENCE = %s")
             if nom_filter:
                 filters.append(f"l.NOM LIKE %s")
             if type_filter:
-                filters.append(f"ng.libelle = %s")
+                filters.append(f"ag.ageclib = %s")
             # Filtrage par plage de dates (start_date et end_date)
             if start_date and end_date:
                 filters.append(f"l.DATOUV BETWEEN %s AND %s")
@@ -956,11 +960,11 @@ class Client(APIView):
             if client_filter:
                 query_params.append(client_filter)
             if agence_filter:
-                query_params.append(agence_filter)    
+                query_params.append(agence_filter)
             if nom_filter:
-                query_params.append(f"%{nom_filter}%")
+                query_params.append(f"%{nom_filter}%")  # On met le nom dans un format LIKE
             if type_filter:
-                query_params.append(type_filter)       
+                query_params.append(type_filter)
             if start_date and end_date:
                 query_params.extend([start_date, end_date])
 
@@ -992,7 +996,6 @@ class Client(APIView):
         except Exception as e:
             # Gestion des erreurs
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 
 
 ####---- virement intern ######
@@ -1311,23 +1314,60 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import connection
 
-class ClientDataAPIView(APIView):
+class ClientDataAPIView1(APIView):
     def get(self, request):
         with connection.cursor() as cursor:
             query = """
-                SELECT p.ageclib, COUNT(*)
+                SELECT p.ageclib, c.agence ,COUNT(*)
                 FROM cli c
                 INNER JOIN agec p ON c.agec = p.agec
                 INNER JOIN cpt t ON c.client = t.client
                 WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
-                GROUP BY p.ageclib
+                GROUP BY p.ageclib ,c.agence
             """
             cursor.execute(query)
             results = cursor.fetchall()
 
         # Structurer les données pour la réponse JSON
-        data = [{"ageclib": row[0], "count": row[1]} for row in results]
+        data = [{"ageclib": row[0], "agence": row[1], "count": row[2]} for row in results]
 
         return Response(data)
 
 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.db import connection
+
+class ClientDataAPIView(APIView):
+    def get(self, request):
+        # Récupérer le paramètre de requête 'agence' s'il existe
+        agence_filter = request.query_params.get('agence', None)
+
+        with connection.cursor() as cursor:
+            query = """
+                SELECT p.ageclib, c.agence, COUNT(*)
+                FROM cli c
+                INNER JOIN agec p ON c.agec = p.agec
+                INNER JOIN cpt t ON c.client = t.client
+                WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
+            """
+            
+            # Ajouter le filtre sur l'agence si le paramètre est présent
+            if agence_filter:
+                query += " AND c.agence = %s"
+            
+            # Ajouter la clause GROUP BY
+            query += " GROUP BY p.ageclib, c.agence"
+
+            # Exécuter la requête
+            if agence_filter:
+                cursor.execute(query, [agence_filter])
+            else:
+                cursor.execute(query)
+
+            results = cursor.fetchall()
+
+        # Structurer les données pour la réponse JSON
+        data = [{"ageclib": row[0], "agence": row[1], "count": row[2]} for row in results]
+
+        return Response(data)
