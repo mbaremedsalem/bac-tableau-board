@@ -919,7 +919,7 @@ class Client(APIView):
             # Construction de la requête SQL de base
             query = """
                 SELECT 
-                    l.CLIENT,
+                   DISTINCT l.CLIENT,
                     l.NOM,
                     l.DATOUV,
                     l.DATFRM,
@@ -1309,12 +1309,56 @@ class ClientComptePosdevView(APIView):
 
 
 #### parque client 
-
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import connection
 
 class ClientDataAPIView(APIView):
+    def get(self, request):
+        # Récupérer le paramètre de requête 'agence' s'il existe
+        agence_filter = request.query_params.get('agence', None)
+
+        # Valider que agence_filter est une chaîne de caractères non vide
+        if agence_filter is not None and not isinstance(agence_filter, str):
+            return Response({"error": "Le paramètre 'agence' doit être une chaîne de caractères."}, status=400)
+
+        # Définir la requête SQL de base
+        query = """
+            SELECT p.ageclib, c.agence, COUNT(DISTINCT t.client)
+            FROM cli c
+            INNER JOIN agec p ON c.agec = p.agec
+            INNER JOIN cpt t ON c.client = t.client
+            WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
+        """
+
+        # Ajouter le filtre sur l'agence en fonction de la valeur passée
+        if agence_filter == '00001':
+            query += " AND c.agence = '00001'"
+        elif agence_filter == '00002':
+            query += " AND c.agence = '00002'"
+        else:
+            # Si l'agence n'est ni '00001' ni '00002', retourner une erreur
+            return Response({"error": "L'agence doit être '00001' ou '00002'."}, status=400)
+
+        # Ajouter la clause GROUP BY
+        query += " GROUP BY p.ageclib, c.agence"
+
+        # Exécuter la requête
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            results = cursor.fetchall()
+
+        # Structurer les données pour la réponse JSON
+        data = [{"ageclib": row[0], "agence": row[1], "count": row[2]} for row in results]
+
+        return Response(data)
+
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from django.db import connection
+
+class ClientDataAPIView1(APIView):
     def get(self, request):
         # Récupérer le paramètre de requête 'agence' s'il existe
         agence_filter = request.query_params.get('agence', None)
@@ -1325,6 +1369,7 @@ class ClientDataAPIView(APIView):
             FROM cli c
             INNER JOIN agec p ON c.agec = p.agec
             INNER JOIN cpt t ON c.client = t.client
+            DISTINCT t.client,
             WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
         """
 
