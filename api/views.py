@@ -1314,17 +1314,34 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import connection
 
-class ClientDataAPIView1(APIView):
+class ClientDataAPIView(APIView):
     def get(self, request):
+        # Récupérer le paramètre de requête 'agence' s'il existe
+        agence_filter = request.query_params.get('agence', None)
+
+        # Définir la requête SQL de base
+        query = """
+            SELECT p.ageclib, c.agence, COUNT(*)
+            FROM cli c
+            INNER JOIN agec p ON c.agec = p.agec
+            INNER JOIN cpt t ON c.client = t.client
+            WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
+        """
+
+        # Ajouter le filtre sur l'agence en fonction de la valeur passée
+        if agence_filter == '00001':
+            query += " AND c.agence = '00001'"
+        elif agence_filter == '00002':
+            query += " AND c.agence = '00002'"
+        else:
+            # Si l'agence n'est ni '00001' ni '00002', retourner une erreur
+            return Response({"error": "L'agence doit être '00001' ou '00002'."}, status=400)
+
+        # Ajouter la clause GROUP BY
+        query += " GROUP BY p.ageclib, c.agence"
+
+        # Exécuter la requête
         with connection.cursor() as cursor:
-            query = """
-                SELECT p.ageclib, c.agence ,COUNT(*)
-                FROM cli c
-                INNER JOIN agec p ON c.agec = p.agec
-                INNER JOIN cpt t ON c.client = t.client
-                WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
-                GROUP BY p.ageclib ,c.agence
-            """
             cursor.execute(query)
             results = cursor.fetchall()
 
@@ -1334,14 +1351,19 @@ class ClientDataAPIView1(APIView):
         return Response(data)
 
 
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from django.db import connection
 
-class ClientDataAPIView(APIView):
+class ClientDataAPIView1(APIView):
     def get(self, request):
         # Récupérer le paramètre de requête 'agence' s'il existe
         agence_filter = request.query_params.get('agence', None)
+
+        # Valider que agence_filter est une chaîne de caractères non vide
+        if agence_filter is not None and not isinstance(agence_filter, str):
+            return Response({"error": "Le paramètre 'agence' doit être une chaîne de caractères."}, status=400)
 
         with connection.cursor() as cursor:
             query = """
@@ -1350,18 +1372,13 @@ class ClientDataAPIView(APIView):
                 INNER JOIN agec p ON c.agec = p.agec
                 INNER JOIN cpt t ON c.client = t.client
                 WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
+                GROUP BY p.ageclib ,c.agence
             """
             
             # Ajouter le filtre sur l'agence si le paramètre est présent
             if agence_filter:
-                query += " AND c.agence = %s"
-            
-            # Ajouter la clause GROUP BY
-            query += " GROUP BY p.ageclib, c.agence"
-
-            # Exécuter la requête
-            if agence_filter:
-                cursor.execute(query, [agence_filter])
+                query += " AND c.agence = :agence"
+                cursor.execute(query, {"agence": agence_filter})
             else:
                 cursor.execute(query)
 
