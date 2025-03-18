@@ -1361,7 +1361,7 @@ class CompteDetailsView3(APIView):
             if datfrm:
                 query += f" AND t.DATFRM = '{datfrm}'"
             if libelle:
-                query += f" AND ng.libelle LIKE '%{libelle}%'"
+                query += f" AND ng.libelle = '{libelle}'"
             if client:
                 query += f" AND t.client = '{client}'"
             if compte:
