@@ -307,7 +307,7 @@ class CompteAPIView1(APIView):
 
 
 
-class CompteAPIView(APIView):
+class CompteAPIView2(APIView):
     serializer_class = CptSerializer
 
     def get(self, request, *args, **kwargs):
@@ -376,6 +376,130 @@ from django.db import connection
 from rest_framework import status
 
 class Virement(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            # Récupérer les critères de recherche depuis les paramètres de la requête
+            start_date = request.GET.get('start_date', None)
+            end_date = request.GET.get('end_date', None)
+            beneficiaire_filter = request.GET.get('beneficiaire', None)
+            compte_benef_filter = request.GET.get('compte_benef', None)
+            reference_transaction_filter = request.GET.get('reference_transaction', None)
+            agence_filter = request.GET.get('agence', None)  # Nouveau filtre pour l'agence
+
+            # Construction de la requête SQL de base
+            query = """
+                SELECT A.OPER,
+                       A.comptec AS Compte_Benef,
+                       TRIM(NOMBE) AS BENEFICIAIRE,
+                       A.DATOPER AS DATE_TRANSACTION,
+                       c.agence,
+                       TRIM(A.DEV1) AS devise,
+                       'CD' AS MODE_REGLEMENT,
+                       ROUND(A.MNTDEVC, 2) AS MONTANT_TRANSACTION,
+                       NVL(NVL((SELECT i.numid FROM aub.titu t, aub.idp i WHERE t.client = c.client AND t.idp = i.idp),
+                               (SELECT idm.tin1 FROM aub.titu t, aub.cli m1, aub.idm WHERE t.client = m1.client AND t.client = c.client AND t.idm = idm.idm AND NVL(t.valide, 'N') = 'V')), ' ') AS NIF_NNI,
+                       A.COMPTED AS Compte_Don,
+                       A.DORDRED AS NOM_DONNEUR_ORDRE,
+                       (SELECT nom FROM aub.pays WHERE pays = A.pays) AS PAYS,
+                       'PRODUIT' AS produit,
+                       A.NOOPER AS REFERENCE_TRANSACTION,
+                       A.COURS12 AS TAUX_CHANGE,
+                       A.devised AS devisd_debit,
+                       A.devisec AS devise_credit,
+                       mntdevd AS montant_debit,
+                       mntdevc AS montant_credit
+                FROM VIREST A
+                JOIN cpt c ON A.COMPTED = c.compte
+                WHERE A.VALIDE = 'V'
+                  AND A.compted = c.compte
+                  AND comptec NOT LIKE '011000%'
+            """
+            
+            # Liste des conditions de filtre et des paramètres de requête
+            filters = []
+            query_params = []
+
+            # Ajouter le filtre de date si nécessaire
+            if start_date and end_date:
+                filters.append("A.DATOPER BETWEEN %s AND %s")
+                query_params.extend([start_date, end_date])
+
+            # Ajouter un filtre pour le bénéficiaire si nécessaire
+            if beneficiaire_filter:
+                filters.append("TRIM(NOMBE) LIKE %s")
+                query_params.append(f"%{beneficiaire_filter}%")
+
+            # Ajouter un filtre pour le compte bénéficiaire si nécessaire
+            if compte_benef_filter:
+                filters.append("A.comptec LIKE %s")
+                query_params.append(f"%{compte_benef_filter}%")
+
+            # Ajouter un filtre pour la référence de transaction si nécessaire
+            if reference_transaction_filter:
+                filters.append("A.NOOPER LIKE %s")
+                query_params.append(f"%{reference_transaction_filter}%")
+
+            # Ajouter un filtre pour l'agence si nécessaire
+            if agence_filter:
+                filters.append("c.agence = %s")
+                query_params.append(agence_filter)
+
+            # Ajouter les filtres à la requête SQL si nécessaires
+            if filters:
+                query += " AND " + " AND ".join(filters)
+
+            # Ajouter l'ordre de tri
+            query += " ORDER BY A.DATOPER"
+
+            # Exécuter la requête SQL avec les paramètres
+            with connection.cursor() as cursor:
+                cursor.execute(query, query_params)
+                rows = cursor.fetchall()
+
+            # Format des résultats dans une liste de dictionnaires
+            result = []
+            for row in rows:
+                result.append({
+                    'oper': row[0],
+                    'compte_benef': row[1],
+                    'beneficiaire': row[2],
+                    'date_transaction': row[3],
+                    'agence': row[4],
+                    'devise': row[5],
+                    'mode_reglement': row[6],
+                    'montant_transaction': row[7],
+                    'nif_nni': row[8],
+                    'compte_don': row[9],
+                    'nom_donneur_ordre': row[10],
+                    'pays': row[11],
+                    'produit': row[12],
+                    'reference_transaction': row[13],
+                    'taux_change': row[14],
+                    'devisd_debit': row[15],
+                    'devise_credit': row[16],
+                    'montant_debit': row[17],
+                    'montant_credit': row[18],
+                })
+
+            # Pagination des résultats
+            paginator = PageNumberPagination()
+            paginator.page_size = 9  # Limiter les résultats par page
+            paginated_results = paginator.paginate_queryset(result, request)
+
+            # Retourner les résultats paginés avec la réponse JSON
+            return paginator.get_paginated_response(paginated_results)
+
+        except Exception as e:
+            # Gestion des erreurs
+            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.pagination import PageNumberPagination
+from django.db import connection
+from rest_framework import status
+
+class Virement1(APIView):
     def get(self, request, *args, **kwargs):
         try:
             # Récupérer les critères de recherche depuis les paramètres de la requête
@@ -1094,14 +1218,62 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 
+class ClientDataAPIViewKK(APIView):
+    def get(self, request):
+        # Récupérer le paramètre de requête 'agence' s'il existe
+        agence_filter = request.query_params.get('agence', None)
+
+        # Valider que agence_filter est une chaîne de caractères non vide
+        if agence_filter is not None and not isinstance(agence_filter, str):
+            return Response({"error": "Le paramètre 'agence' doit être une chaîne de caractères."}, status=400)
+
+        # Définir la requête SQL de base
+        query = """
+            SELECT p.ageclib, c.agence, COUNT(DISTINCT t.client)
+            FROM cli c
+            INNER JOIN agec p ON c.agec = p.agec
+            INNER JOIN cpt t ON c.client = t.client
+            WHERE t.ncg LIKE '210%' AND c.datfrm IS NULL
+        """
+
+        # Ajouter le filtre sur l'agence en fonction de la valeur passée
+        if agence_filter == '00001':
+            query += " AND c.agence = '00001'"
+        elif agence_filter == '00002':
+            query += " AND c.agence = '00002'"
+        else:
+            # Si l'agence n'est ni '00001' ni '00002', retourner une erreur
+            return Response({"error": "L'agence doit être '00001' ou '00002'."}, status=400)
+
+        # Ajouter la clause GROUP BY
+        query += " GROUP BY p.ageclib, c.agence"
+
+        # Exécuter la requête
+        with connection.cursor() as cursor:
+            cursor.execute(query)
+            results = cursor.fetchall()
+
+        # Structurer les données pour la réponse JSON
+        data = [{"ageclib": row[0], "agence": row[1], "count": row[2]} for row in results]
+
+        return Response(data)
+
 
 class LibelleCountView(APIView):
     def get(self, request, *args, **kwargs):
         try:
+            # Récupérer le paramètre de requête 'agence' s'il existe
+            agence_filter = request.query_params.get('agence', None)
+
+            # Valider que agence_filter est une chaîne de caractères non vide
+            if agence_filter is not None and not isinstance(agence_filter, str):
+                return Response({"error": "Le paramètre 'agence' doit être une chaîne de caractères."}, status=400)
+
             # Définir la requête SQL
             query = """
                 SELECT 
                     ng.libelle,
+                    c.agence,
                     COUNT(*) AS count
                 FROM cli c, agec p, cpt t, ncglib ng
                 WHERE 
@@ -1110,16 +1282,26 @@ class LibelleCountView(APIView):
                     AND ng.ncg = t.ncg
                     AND t.ncg LIKE '210%'
                     AND t.datfrm IS NULL
-                GROUP BY ng.libelle
-                ORDER BY ng.libelle
+
             """
+            # Ajouter le filtre sur l'agence en fonction de la valeur passée
+            if agence_filter == '00001':
+                query += " AND c.agence = '00001'"
+            elif agence_filter == '00002':
+                query += " AND c.agence = '00002'"
+            else:
+                # Si l'agence n'est ni '00001' ni '00002', retourner une erreur
+                return Response({"error": "L'agence doit être '00001' ou '00002'."}, status=400)
+
+            # Ajouter la clause GROUP BY
+            query += " GROUP BY ng.libelle,c.agence"
             # Exécuter la requête SQL
             with connection.cursor() as cursor:
                 cursor.execute(query)
                 rows = cursor.fetchall()
 
             # Format des résultats dans une liste de dictionnaires
-            results = [{'libelle': row[0], 'count': row[1]} for row in rows]
+            results = [{'libelle': row[0],'agence': row[1],'count': row[2]} for row in rows]
 
             # Retourner les résultats en JSON
             return Response(results, status=status.HTTP_200_OK)
@@ -1129,6 +1311,143 @@ class LibelleCountView(APIView):
             return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 #####detaile compte 
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
+from django.db import connection
+
+class CompteDetailsView3(APIView):
+    def get(self, request, *args, **kwargs):
+        try:
+            # Récupérer les paramètres de recherche
+            agence = request.query_params.get('agence', None)
+            datouv = request.query_params.get('datouv', None)
+            datfrm = request.query_params.get('datfrm', None)
+            libelle = request.query_params.get('libelle', None)
+            client = request.query_params.get('client', None)
+            compte = request.query_params.get('compte', None)
+            
+            # Définir la requête SQL de base
+            query = """
+                SELECT 
+                    t.compte,
+                    t.client,
+                    t.nom,
+                    t.ncg,
+                    ng.libelle,
+                    t.DATOUV,
+                    t.DATFRM,
+                    t.CODFRM,
+                    t.expl,
+                    t.agence,
+                    t.posdev,
+                    t.DATVAL  
+                FROM 
+                    cli c, agec p, cpt t, ncglib ng
+                WHERE 
+                    c.agec = p.agec 
+                    AND c.client = t.client 
+                    AND ng.ncg = t.ncg 
+                    AND t.DATFRM IS NULL
+                    AND t.ncg LIKE '210%'
+            """
+
+            # Ajouter les filtres en fonction des paramètres de recherche
+            if agence:
+                query += f" AND t.agence = '{agence}'"
+            if datouv:
+                query += f" AND t.DATOUV = '{datouv}'"
+            if datfrm:
+                query += f" AND t.DATFRM = '{datfrm}'"
+            if libelle:
+                query += f" AND ng.libelle LIKE '%{libelle}%'"
+            if client:
+                query += f" AND t.client = '{client}'"
+            if compte:
+                query += f" AND t.compte = '{compte}'"
+
+            # Ajouter le tri par libellé
+            query += " ORDER BY ng.libelle"
+
+            # Exécuter la requête SQL
+            with connection.cursor() as cursor:
+                cursor.execute(query)
+                rows = cursor.fetchall()
+
+            # Formater les résultats dans une liste de dictionnaires
+            results = [
+                {
+                    'COMPTE': row[0],
+                    'CLIENT': row[1],
+                    'NOM': row[2],
+                    'NCG': row[3],
+                    'TYP': row[4],
+                    'DATOUV': row[5],
+                    'DATFRM': row[6],
+                    'CODFRM': row[7],
+                    'EXPL': row[8],
+                    'AGENCE': row[9],
+                    'POSDEV': row[10],
+                    'DATVAL': row[11]  # DATVAL est maintenant sélectionné depuis la table cpt
+                } for row in rows
+            ]
+
+            # Pagination avec PageNumberPagination
+            paginator = PageNumberPagination()
+            paginator.page_size = 9  # Limiter les résultats à 9 par page
+            paginated_results = paginator.paginate_queryset(results, request)
+
+            # Retourner les résultats paginés en JSON
+            return paginator.get_paginated_response(paginated_results)
+
+        except Exception as e:
+            # Gérer les erreurs
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+class CompteAPIView(APIView):
+    serializer_class = CptSerializer
+
+    def get(self, request, *args, **kwargs):
+        # Récupérer les critères de recherche depuis les paramètres de la requête
+        client_filter = request.GET.get('CLIENT', None)
+        compte_filter = request.GET.get('COMPTE', None)
+        datouv_filter = request.GET.get('DATOUV', None)
+        datfrm_filter = request.GET.get('DATFRM', None)
+        agence_filter = request.GET.get('AGENCE', None)
+        ncg_filter = request.GET.get('NCG','210')  # Ajouter un paramètre pour NCG
+
+        # Requête initiale avec condition de base NCG LIKE '210%' AND POSDEV > 0
+        comptes = Cpt.objects.filter(NCG__startswith='210')
+
+        if client_filter:
+            comptes = comptes.filter(CLIENT=client_filter)  # Filtre sur CLIENT
+        if compte_filter:
+            comptes = comptes.filter(COMPTE=compte_filter)  # Filtre sur COMPTE
+        if datouv_filter:
+            comptes = comptes.filter(DATOUV=datouv_filter)  # Filtre sur DATOUV
+        if datfrm_filter:
+            comptes = comptes.filter(DATFRM=datfrm_filter)  # Filtre sur DATFRM
+        if agence_filter:
+            comptes = comptes.filter(AGENCE=agence_filter)  # Filtre sur AGENCE
+        if ncg_filter:
+            comptes = comptes.filter(NCG__startswith=ncg_filter)  # Filtre sur NCG (commence par '210%')
+
+        # Pagination des résultats
+        paginator = PageNumberPagination()
+        paginator.page_size = 9  # Limiter les résultats par page
+        paginated_results = paginator.paginate_queryset(comptes, request)
+
+        # Sérialisation des résultats paginés
+        serializer = self.serializer_class(paginated_results, many=True)
+
+        # Retourner les résultats paginés avec la réponse JSON
+        return paginator.get_paginated_response(serializer.data)
+
+
+
 from django.db import connection
 from rest_framework.views import APIView
 from rest_framework.response import Response

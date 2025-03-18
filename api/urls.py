@@ -7,7 +7,7 @@ urlpatterns = [
     path('forget_password/', forgot_password,name='forget-password'),
     path('reset_password/<str:token>', reset_password, name="reset_password"),
 
-    path('compte_filter/', CompteAPIView.as_view(), name='DemChqDt-list'),
+    path('compte_filter/', CompteDetailsView3.as_view(), name='DemChqDt-list'),
     path('compte_ouvert/', CompteDatouvNotNullAPIView.as_view(), name='export-table-query'),
     path('compte_depot/', CompteDeposite.as_view(), name='depot-table-query'),
     path('client/', Client.as_view(), name='client_query'),
