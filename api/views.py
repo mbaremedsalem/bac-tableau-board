@@ -367,255 +367,20 @@ class CompteDatouvNotNullAPIView(APIView):
         # Retourner les résultats paginés avec la réponse JSON
         return paginator.get_paginated_response(serializer.data)
 
-
-# ## virement intern
+#### virement extern 
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from django.db import connection
-from rest_framework import status
+from datetime import datetime
 
 class Virement(APIView):
     def get(self, request, *args, **kwargs):
-        try:
-            # Récupérer les critères de recherche depuis les paramètres de la requête
-            start_date = request.GET.get('start_date', None)
-            end_date = request.GET.get('end_date', None)
-            beneficiaire_filter = request.GET.get('beneficiaire', None)
-            compte_benef_filter = request.GET.get('compte_benef', None)
-            reference_transaction_filter = request.GET.get('reference_transaction', None)
-            agence_filter = request.GET.get('agence', None)  # Nouveau filtre pour l'agence
+        agence_filter = request.GET.get('agence', None)  # Récupérer le paramètre 'agence' de la requête GET
+        date_debut = request.GET.get('date_debut', None)  # Récupérer le paramètre 'date_debut'
+        date_fin = request.GET.get('date_fin', None)  # Récupérer le paramètre 'date_fin'
 
-            # Construction de la requête SQL de base
-            query = """
-                SELECT A.OPER,
-                       A.comptec AS Compte_Benef,
-                       TRIM(NOMBE) AS BENEFICIAIRE,
-                       A.DATOPER AS DATE_TRANSACTION,
-                       c.agence,
-                       TRIM(A.DEV1) AS devise,
-                       'CD' AS MODE_REGLEMENT,
-                       ROUND(A.MNTDEVC, 2) AS MONTANT_TRANSACTION,
-                       NVL(NVL((SELECT i.numid FROM aub.titu t, aub.idp i WHERE t.client = c.client AND t.idp = i.idp),
-                               (SELECT idm.tin1 FROM aub.titu t, aub.cli m1, aub.idm WHERE t.client = m1.client AND t.client = c.client AND t.idm = idm.idm AND NVL(t.valide, 'N') = 'V')), ' ') AS NIF_NNI,
-                       A.COMPTED AS Compte_Don,
-                       A.DORDRED AS NOM_DONNEUR_ORDRE,
-                       (SELECT nom FROM aub.pays WHERE pays = A.pays) AS PAYS,
-                       'PRODUIT' AS produit,
-                       A.NOOPER AS REFERENCE_TRANSACTION,
-                       A.COURS12 AS TAUX_CHANGE,
-                       A.devised AS devisd_debit,
-                       A.devisec AS devise_credit,
-                       mntdevd AS montant_debit,
-                       mntdevc AS montant_credit
-                FROM VIREST A
-                JOIN cpt c ON A.COMPTED = c.compte
-                WHERE A.VALIDE = 'V'
-                  AND A.compted = c.compte
-                  AND comptec NOT LIKE '011000%'
-            """
-            
-            # Liste des conditions de filtre et des paramètres de requête
-            filters = []
-            query_params = []
-
-            # Ajouter le filtre de date si nécessaire
-            if start_date and end_date:
-                filters.append("A.DATOPER BETWEEN %s AND %s")
-                query_params.extend([start_date, end_date])
-
-            # Ajouter un filtre pour le bénéficiaire si nécessaire
-            if beneficiaire_filter:
-                filters.append("TRIM(NOMBE) LIKE %s")
-                query_params.append(f"%{beneficiaire_filter}%")
-
-            # Ajouter un filtre pour le compte bénéficiaire si nécessaire
-            if compte_benef_filter:
-                filters.append("A.comptec LIKE %s")
-                query_params.append(f"%{compte_benef_filter}%")
-
-            # Ajouter un filtre pour la référence de transaction si nécessaire
-            if reference_transaction_filter:
-                filters.append("A.NOOPER LIKE %s")
-                query_params.append(f"%{reference_transaction_filter}%")
-
-            # Ajouter un filtre pour l'agence si nécessaire
-            if agence_filter:
-                filters.append("c.agence = %s")
-                query_params.append(agence_filter)
-
-            # Ajouter les filtres à la requête SQL si nécessaires
-            if filters:
-                query += " AND " + " AND ".join(filters)
-
-            # Ajouter l'ordre de tri
-            query += " ORDER BY A.DATOPER"
-
-            # Exécuter la requête SQL avec les paramètres
-            with connection.cursor() as cursor:
-                cursor.execute(query, query_params)
-                rows = cursor.fetchall()
-
-            # Format des résultats dans une liste de dictionnaires
-            result = []
-            for row in rows:
-                result.append({
-                    'oper': row[0],
-                    'compte_benef': row[1],
-                    'beneficiaire': row[2],
-                    'date_transaction': row[3],
-                    'agence': row[4],
-                    'devise': row[5],
-                    'mode_reglement': row[6],
-                    'montant_transaction': row[7],
-                    'nif_nni': row[8],
-                    'compte_don': row[9],
-                    'nom_donneur_ordre': row[10],
-                    'pays': row[11],
-                    'produit': row[12],
-                    'reference_transaction': row[13],
-                    'taux_change': row[14],
-                    'devisd_debit': row[15],
-                    'devise_credit': row[16],
-                    'montant_debit': row[17],
-                    'montant_credit': row[18],
-                })
-
-            # Pagination des résultats
-            paginator = PageNumberPagination()
-            paginator.page_size = 9  # Limiter les résultats par page
-            paginated_results = paginator.paginate_queryset(result, request)
-
-            # Retourner les résultats paginés avec la réponse JSON
-            return paginator.get_paginated_response(paginated_results)
-
-        except Exception as e:
-            # Gestion des erreurs
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-from rest_framework.views import APIView
-from rest_framework.response import Response
-from rest_framework.pagination import PageNumberPagination
-from django.db import connection
-from rest_framework import status
-
-class Virement1(APIView):
-    def get(self, request, *args, **kwargs):
-        try:
-            # Récupérer les critères de recherche depuis les paramètres de la requête
-            start_date = request.GET.get('start_date', None)
-            end_date = request.GET.get('end_date', None)
-            beneficiaire_filter = request.GET.get('beneficiaire', None)
-            compte_benef_filter = request.GET.get('compte_benef', None)
-            reference_transaction_filter = request.GET.get('reference_transaction', None)
-
-            # Construction de la requête SQL de base
-            query = """
-                SELECT A.OPER,
-                       A.comptec AS Compte_Benef,
-                       TRIM(NOMBE) AS BENEFICIAIRE,
-                       A.DATOPER AS DATE_TRANSACTION,
-                       c.agence,
-                       TRIM(A.DEV1) AS devise,
-                       'CD' AS MODE_REGLEMENT,
-                       ROUND(A.MNTDEVC, 2) AS MONTANT_TRANSACTION,
-                       NVL(NVL((SELECT i.numid FROM aub.titu t, aub.idp i WHERE t.client = c.client AND t.idp = i.idp),
-                               (SELECT idm.tin1 FROM aub.titu t, aub.cli m1, aub.idm WHERE t.client = m1.client AND t.client = c.client AND t.idm = idm.idm AND NVL(t.valide, 'N') = 'V')), ' ') AS NIF_NNI,
-                       A.COMPTED AS Compte_Don,
-                       A.DORDRED AS NOM_DONNEUR_ORDRE,
-                       (SELECT nom FROM aub.pays WHERE pays = A.pays) AS PAYS,
-                       'PRODUIT' AS produit,
-                       A.NOOPER AS REFERENCE_TRANSACTION,
-                       A.COURS12 AS TAUX_CHANGE,
-                       A.devised AS devisd_debit,
-                       A.devisec AS devise_credit,
-                       mntdevd AS montant_debit,
-                       mntdevc AS montant_credit
-                FROM VIREST A
-                JOIN cpt c ON A.COMPTED = c.compte
-                WHERE A.VALIDE = 'V'
-                  AND A.compted = c.compte
-                  AND comptec NOT LIKE '011000%'
-            """
-            
-            # Liste des conditions de filtre et des paramètres de requête
-            filters = []
-            query_params = []
-
-            # Ajouter le filtre de date si nécessaire
-            if start_date and end_date:
-                filters.append("A.DATOPER BETWEEN %s AND %s")
-                query_params.extend([start_date, end_date])
-
-            # Ajouter un filtre pour le bénéficiaire si nécessaire
-            if beneficiaire_filter:
-                filters.append("TRIM(NOMBE) LIKE %s")
-                query_params.append(f"%{beneficiaire_filter}%")
-
-            # Ajouter un filtre pour le compte bénéficiaire si nécessaire
-            if compte_benef_filter:
-                filters.append("A.comptec LIKE %s")
-                query_params.append(f"%{compte_benef_filter}%")
-
-            # Ajouter un filtre pour la référence de transaction si nécessaire
-            if reference_transaction_filter:
-                filters.append("A.NOOPER LIKE %s")
-                query_params.append(f"%{reference_transaction_filter}%")
-
-            # Ajouter les filtres à la requête SQL si nécessaires
-            if filters:
-                query += " AND " + " AND ".join(filters)
-
-            # Ajouter l'ordre de tri
-            query += " ORDER BY A.DATOPER"
-
-            # Exécuter la requête SQL avec les paramètres
-            with connection.cursor() as cursor:
-                cursor.execute(query, query_params)
-                rows = cursor.fetchall()
-
-            # Format des résultats dans une liste de dictionnaires
-            result = []
-            for row in rows:
-                result.append({
-                    'oper': row[0],
-                    'compte_benef': row[1],
-                    'beneficiaire': row[2],
-                    'date_transaction': row[3],
-                    'agence': row[4],
-                    'devise': row[5],
-                    'mode_reglement': row[6],
-                    'montant_transaction': row[7],
-                    'nif_nni': row[8],
-                    'compte_don': row[9],
-                    'nom_donneur_ordre': row[10],
-                    'pays': row[11],
-                    'produit': row[12],
-                    'reference_transaction': row[13],
-                    'taux_change': row[14],
-                    'devisd_debit': row[15],
-                    'devise_credit': row[16],
-                    'montant_debit': row[17],
-                    'montant_credit': row[18],
-                })
-
-            # Pagination des résultats
-            paginator = PageNumberPagination()
-            paginator.page_size = 9  # Limiter les résultats par page
-            paginated_results = paginator.paginate_queryset(result, request)
-
-            # Retourner les résultats paginés avec la réponse JSON
-            return paginator.get_paginated_response(paginated_results)
-
-        except Exception as e:
-            # Gestion des erreurs
-            return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-from django.db import connection
-
-class Virement(APIView):
-    def get(self, request, *args, **kwargs):
-       # agence_filter = request.GET.get('agence', None)
         try:
             # Requête SQL brute
             query = """
@@ -644,8 +409,23 @@ class Virement(APIView):
                 WHERE A.VALIDE = 'V'
                   AND A.compted = c.compte
                   AND comptec NOT LIKE '011000%'
-                ORDER BY A.DATOPER
             """
+
+            # Ajouter le filtre par agence si le paramètre est présent
+            if agence_filter:
+                query += f" AND c.agence = '{agence_filter}'"
+
+            # Ajouter le filtre par plage de dates si les deux dates sont présentes
+            if date_debut and date_fin:
+                try:
+                    # Valider le format des dates
+                    datetime.strptime(date_debut, '%Y-%m-%d')
+                    datetime.strptime(date_fin, '%Y-%m-%d')
+                    query += f" AND A.DATOPER BETWEEN TO_DATE('{date_debut}', 'YYYY-MM-DD') AND TO_DATE('{date_fin}', 'YYYY-MM-DD')"
+                except ValueError:
+                    return Response({"error": "Format de date invalide. Utilisez YYYY-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+
+            query += " ORDER BY A.DATOPER"
 
             # Exécuter la requête SQL
             with connection.cursor() as cursor:
@@ -688,7 +468,6 @@ class Virement(APIView):
         except Exception as e:
             # Gestion des erreurs
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
 ##### GUICHET ##########
 from rest_framework.views import APIView
 from rest_framework.response import Response
