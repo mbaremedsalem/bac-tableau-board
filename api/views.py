@@ -483,6 +483,7 @@ class Guichet(APIView):
             compte_benef_filter = request.GET.get('Compte_benef', None)
             nomlib_filter = request.GET.get('nomlib', None)
             oper_filter = request.GET.get('oper', None)
+            type_operation_filter = request.GET.get('type_operation', None)
             agence_filter = request.GET.get('agence', None)
 
             # Récupérer les dates de début et de fin pour la recherche entre deux dates
@@ -516,6 +517,8 @@ class Guichet(APIView):
                 filters.append(f"a.COMPTEC = '{compte_benef_filter}'")
             if oper_filter:
                 filters.append(f"a.oper = '{oper_filter}'")
+            if type_operation_filter:
+                filters.append(f"f.y1= '{type_operation_filter}'")
             if agence_filter:
                 filters.append(f"c.agence = '{agence_filter}'")
             if nomlib_filter:
@@ -697,6 +700,13 @@ class ClientDataAPIView12(APIView):
 class OperatioGuichetView(APIView):
     def get(self, request, *args, **kwargs):
         try:
+            # Récupérer le paramètre de requête 'agence' s'il existe
+            agence_filter = request.query_params.get('agence', None)
+
+            # Valider que agence_filter est une chaîne de caractères non vide
+            if agence_filter is not None and not isinstance(agence_filter, str):
+                return Response({"error": "Le paramètre 'agence' doit être une chaîne de caractères."}, status=400)
+                
             # Définir la requête SQL
             query = """
                 SELECT 
@@ -705,12 +715,18 @@ class OperatioGuichetView(APIView):
                     COUNT(*) AS Nombre
                 FROM cpt c,GUICHET a, fx5y8 f
                 WHERE tname='GUICHET' and MODEL='OPERLIB' and trim(a.oper) = trim(f.x1) and a.VALIDE = 'V'
-                GROUP BY 
-                    f.y1,c.agence
-                ORDER BY 
-                    f.y1
             """
-            
+            # Ajouter le filtre sur l'agence en fonction de la valeur passée
+            if agence_filter == '00001':
+                query += " AND c.agence = '00001'"
+            elif agence_filter == '00002':
+                query += " AND c.agence = '00002'"
+            else:
+                # Si l'agence n'est ni '00001' ni '00002', retourner une erreur
+                return Response({"error": "L'agence doit être '00001' ou '00002'."}, status=400)
+
+            # Ajouter la clause GROUP BY
+            query += " GROUP BY f.y1, c.agence "
             # Exécuter la requête SQL
             with connection.cursor() as cursor:
                 cursor.execute(query)
@@ -718,7 +734,7 @@ class OperatioGuichetView(APIView):
 
             # Format des résultats dans une liste de dictionnaires
             results = [
-                {'type_operation': row[0], 'Nombre': row[1]} for row in rows
+                {'type_operation': row[0],'agence': row[1], 'Nombre': row[2]} for row in rows
             ]
 
             # Retourner les résultats en JSON
