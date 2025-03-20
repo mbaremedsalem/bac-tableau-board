@@ -706,7 +706,7 @@ class OperatioGuichetView(APIView):
                 FROM cpt c,GUICHET a, fx5y8 f
                 WHERE tname='GUICHET' and MODEL='OPERLIB' and trim(a.oper) = trim(f.x1) and a.VALIDE = 'V'
                 GROUP BY 
-                    f.y1
+                    f.y1,c.agence
                 ORDER BY 
                     f.y1
             """
