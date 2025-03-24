@@ -11,7 +11,7 @@ class SwitchDatabaseMiddleware:
         path = request.path
 
         # Déterminer quelle base de données utiliser en fonction de l'endpoint demandé
-        if path in ['/api/token/', '/api/register/', '/api/me/','/api/forget_password/', '/api/reset_password/<str:token>'] or \
+        if path in ['/api/token/', '/api/register/', '/api/me/','/me/update/','/api/forget_password/', '/api/reset_password/<str:token>'] or \
            path.startswith('/api/reset_password/') or \
            path.startswith('/admin/') or \
            re.match(r'^/api/forget_password/[^/]+/$', path) or \
