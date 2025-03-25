@@ -16,8 +16,8 @@ class Profile(models.Model):
     # Nouveau champ pour les posts (si vous voulez stocker une liste de posts, par exemple)
     post = models.TextField(blank=True, null=True)
 
-    def __str__(self):
-        return self. str(reset_passwopostrd_token)
+    # def __str__(self):
+    #     return self. str(reset_passwopostrd_token)
 
 @receiver(post_save, sender=User)
 def save_profile(sender, instance, created, **kwargs):
