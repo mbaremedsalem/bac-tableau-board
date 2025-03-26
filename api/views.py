@@ -52,11 +52,11 @@ def update_user(request):
 
     user.first_name = data['first_name']
     user.last_name = data['last_name']
-    user.username = data['email']
+    
     user.email = data['email']
 
-    if data['password'] != "":
-        user.password = make_password(data['password'])
+    # if data['password'] != "":
+    #     user.password = make_password(data['password'])
 
     user.save()
     serializer = UserSerializer(user,many= False)
@@ -65,6 +65,80 @@ def update_user(request):
 
 
 
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth.hashers import make_password, check_password
+from django.contrib.auth import get_user_model
+from rest_framework.exceptions import ValidationError
+
+User = get_user_model()
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    user = request.user
+    data = request.data
+
+    # Vérifier que tous les champs requis sont présents
+    required_fields = ['old_password', 'new_password', 'confirm_password']
+    if not all(field in data for field in required_fields):
+        return Response(
+            {'error': 'Tous les champs sont requis: old_password, new_password, confirm_password'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    old_password = data['old_password']
+    new_password = data['new_password']
+    confirm_password = data['confirm_password']
+
+    # 1. Vérifier que l'ancien mot de passe est correct
+    if not check_password(old_password, user.password):
+        return Response(
+            {'error': 'Ancien mot de passe incorrect'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 2. Vérifier que les nouveaux mots de passe correspondent
+    if new_password != confirm_password:
+        return Response(
+            {'error': 'Les nouveaux mots de passe ne correspondent pas'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 3. Vérifier que le nouveau mot de passe est différent de l'ancien
+    if old_password == new_password:
+        return Response(
+            {'error': 'Le nouveau mot de passe doit être différent de l\'ancien'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # 4. Valider la complexité du nouveau mot de passe
+    if len(new_password) < 8:
+        return Response(
+            {'error': 'Le mot de passe doit contenir au moins 8 caractères'},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Tout est valide, procéder au changement
+    try:
+        user.password = make_password(new_password)
+        user.save()
+        
+        # Optionnel: Invalider les tokens existants si vous utilisez JWT
+        # from rest_framework_simplejwt.tokens import RefreshToken
+        # RefreshToken.for_user(user).blacklist()
+        
+        return Response(
+            {'success': 'Mot de passe changé avec succès'},
+            status=status.HTTP_200_OK
+        )
+    except Exception as e:
+        return Response(
+            {'error': f'Erreur lors du changement: {str(e)}'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 #froget password 
 
 # import matplotlib.pyplot as plt
